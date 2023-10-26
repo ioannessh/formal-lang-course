@@ -7,6 +7,7 @@ from pyformlang.finite_automaton import (
 )
 from pyformlang.regular_expression import Regex
 from scipy.sparse import dok_matrix
+from pyformlang.cfg import CFG
 
 
 class NfaAsMatrix:
@@ -97,3 +98,18 @@ def convert_matrix_to_nfa(matrix: NfaAsMatrix) -> NondeterministicFiniteAutomato
         nfa.add_final_state(states_arr[i])
 
     return nfa
+
+
+def convert_cfg_to_wcnf(cfg: CFG) -> CFG:
+    wcnf = (
+        cfg.remove_useless_symbols()
+        .eliminate_unit_productions()
+        .remove_useless_symbols()
+    )
+
+    return CFG(
+        start_symbol=cfg.start_symbol,
+        productions=wcnf._decompose_productions(
+            wcnf._get_productions_with_only_single_terminals()
+        ),
+    )
