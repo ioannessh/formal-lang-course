@@ -1,9 +1,12 @@
 import os
 
+import pytest
+
 from project.utils.converters import *
 from project.utils.graph import *
 from project.utils.matrix import *
 import networkx as nx
+from pyformlang.cfg import CFG, Variable, Terminal, Production
 
 
 def test_regex_to_dfa():
@@ -75,3 +78,89 @@ def test_convert_matrix_to_nfa():
     m = convert_nfa_to_matrix(nfa1)
     nfa2 = convert_matrix_to_nfa(m)
     assert nfa1.to_dict() == nfa2.to_dict()
+
+
+def is_wcnf(wcnf: CFG):
+    for i in wcnf.productions:
+        if not (
+            (
+                len(i.body) == 2
+                and i.body[0] in wcnf.variables
+                and i.body[1] in wcnf.variables
+            )
+            or (len(i.body) == 1 and i.body[0] in wcnf.terminals)
+            or len(i.body) == 0
+        ):
+            return False
+    return True
+
+
+@pytest.fixture
+def default_cfg() -> CFG:
+    variables = {Variable("A"), Variable("B")}
+    terms = {Terminal("("), Terminal(")"), Terminal("1"), Terminal("0")}
+    start_symbol = Variable("A")
+    prods = {
+        Production(Variable("A"), [Terminal("("), Variable("A"), Terminal(")")]),
+        Production(Variable("A"), [Variable("A"), Variable("A")]),
+        Production(Variable("A"), [Terminal("1"), Variable("B")]),
+        Production(Variable("B"), [Terminal("1"), Variable("B")]),
+        Production(Variable("B"), [Terminal("1"), Terminal("0")]),
+    }
+    return CFG(variables, terms, start_symbol, prods)
+
+
+@pytest.fixture
+def expected_wcnf() -> CFG:
+    variables = {
+        Variable("A"),
+        Variable("B"),
+        Variable("0#CNF#"),
+        Variable("1#CNF#"),
+        Variable("(#CNF#"),
+        Variable(")#CNF#"),
+        Variable("C#CNF#1"),
+    }
+    terms = {Terminal("("), Terminal(")"), Terminal("1"), Terminal("0")}
+    start_symbol = Variable("A")
+    prods = {
+        Production(Variable("A"), [Variable("A"), Variable("A")]),
+        Production(Variable("A"), [Variable("1#CNF#"), Variable("B")]),
+        Production(Variable("A"), []),
+        Production(Variable("B"), [Variable("1#CNF#"), Variable("0#CNF#")]),
+        Production(Variable("B"), [Variable("1#CNF#"), Variable("B")]),
+        Production(Variable("A"), [Variable("(#CNF#"), Variable("C#CNF#1")]),
+        Production(Variable("C#CNF#1"), [Variable("A"), Variable(")#CNF#")]),
+        Production(Variable("0#CNF#"), [Terminal("0")]),
+        Production(Variable("(#CNF#"), [Terminal("(")]),
+        Production(Variable("1#CNF#"), [Terminal("1")]),
+        Production(Variable(")#CNF#"), [Terminal(")")]),
+    }
+    return CFG(variables, terms, start_symbol, prods)
+
+
+def test_assert_cfg_with_expected_wcnf(default_cfg, expected_wcnf):
+    actual_wcnf = convert_cfg_to_wcnf(default_cfg)
+    assert is_wcnf(actual_wcnf)
+    assert (
+        len(set(actual_wcnf.productions).difference(set(expected_wcnf.productions)))
+        == 0
+    )
+    assert set(actual_wcnf.variables) == set(expected_wcnf.variables)
+    assert set(actual_wcnf.terminals) == set(expected_wcnf.terminals)
+    assert actual_wcnf.start_symbol == expected_wcnf.start_symbol
+
+
+@pytest.mark.parametrize(
+    "start_symbol,cfg_text",
+    [
+        ("S", "S -> epsilon"),
+        ("S", "S -> a A b B\nA -> c\n B -> d\n S -> epsilon"),
+        ("A", "A -> A A\nA -> \nB -> a b\nA -> a B\nA -> ( A )\nB -> a B"),
+        ("A", "A -> a A a A a A\nA -> b\n A -> c d\nA -> epsilon"),
+    ],
+)
+def test_convert_cfg_to_wcnf(start_symbol: str, cfg_text: str):
+    cfg = CFG.from_text(cfg_text, start_symbol)
+    wcnf = convert_cfg_to_wcnf(cfg)
+    assert is_wcnf(wcnf)
