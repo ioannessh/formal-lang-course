@@ -1,4 +1,5 @@
 import os
+from typing import Dict, AbstractSet
 
 import pytest
 
@@ -126,7 +127,6 @@ def expected_wcnf() -> CFG:
     prods = {
         Production(Variable("A"), [Variable("A"), Variable("A")]),
         Production(Variable("A"), [Variable("1#CNF#"), Variable("B")]),
-        Production(Variable("A"), []),
         Production(Variable("B"), [Variable("1#CNF#"), Variable("0#CNF#")]),
         Production(Variable("B"), [Variable("1#CNF#"), Variable("B")]),
         Production(Variable("A"), [Variable("(#CNF#"), Variable("C#CNF#1")]),
@@ -142,10 +142,7 @@ def expected_wcnf() -> CFG:
 def test_assert_cfg_with_expected_wcnf(default_cfg, expected_wcnf):
     actual_wcnf = convert_cfg_to_wcnf(default_cfg)
     assert is_wcnf(actual_wcnf)
-    assert (
-        len(set(actual_wcnf.productions).difference(set(expected_wcnf.productions)))
-        == 0
-    )
+    assert set(expected_wcnf.productions) == set(actual_wcnf.productions)
     assert set(actual_wcnf.variables) == set(expected_wcnf.variables)
     assert set(actual_wcnf.terminals) == set(expected_wcnf.terminals)
     assert actual_wcnf.start_symbol == expected_wcnf.start_symbol
@@ -164,3 +161,50 @@ def test_convert_cfg_to_wcnf(start_symbol: str, cfg_text: str):
     cfg = CFG.from_text(cfg_text, start_symbol)
     wcnf = convert_cfg_to_wcnf(cfg)
     assert is_wcnf(wcnf)
+
+
+def regex_eq(a: Regex, b: Regex) -> bool:
+    return convert_regex_to_minimal_dfa(a).is_equivalent_to(
+        convert_regex_to_minimal_dfa(b)
+    )
+
+
+@pytest.mark.parametrize(
+    "cfg_text,exp_ecfg_prod,exp_vars",
+    [
+        ("S -> epsilon", {Variable("S"): Regex("$")}, {Variable("S")})
+        # ("S -> a S b S\nS -> epsilon", {Variable("S"): Regex("( a S b S ) | $")}, {Variable("S")}),
+        # ("S -> A B\nA -> a\nB -> b",
+        #  {Variable("S"): Regex("A B"), Variable("B"): Regex("b"), Variable("A"): Regex("a")},
+        #  [Variable("S"), Variable("A"), Variable("B")]),
+    ],
+)
+def test_convert_cfg_to_ecfg(
+    cfg_text: str,
+    exp_ecfg_prod: Dict[(Variable, Regex)],
+    exp_vars: AbstractSet[Variable],
+):
+    ecfg = convert_cfg_to_ecfg(CFG.from_text(cfg_text))
+    assert set(ecfg.variables) == set(exp_vars)
+    for prod in ecfg.productions:
+        assert (exp_ecfg_prod.get(prod.head) is not None) and regex_eq(
+            prod.body, exp_ecfg_prod[prod.head]
+        )
+
+
+@pytest.mark.parametrize(
+    "ecfg_text", ["", "S -> epsilon", "S -> A c* B\nA -> a d*\nB -> b*"]
+)
+def test_convert_ecfg_to_rsm(ecfg_text):
+    ecfg = ECFG.from_text(ecfg_text)
+    rsm = convert_ecfg_to_rsm(ecfg)
+    assert rsm.start_symbol == ecfg.start_symbol
+    exp_sub_automatons = [
+        subAutomaton(i.head, convert_regex_to_minimal_dfa(i.body))
+        for i in ecfg.productions
+    ]
+    act_sub_automatons = rsm.sub_automatons
+    for a, e in zip(act_sub_automatons, exp_sub_automatons):
+        assert isinstance(a, subAutomaton)
+        assert isinstance(e, subAutomaton)
+        assert a.dfa.is_equivalent_to(e.dfa)
