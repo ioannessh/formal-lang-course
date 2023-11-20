@@ -73,3 +73,17 @@ def regular_request(
         ):
             ret.add((state_from, state_to))
     return ret
+
+
+def bfs_regular_request(
+    graph: MultiDiGraph,
+    regex: Regex,
+    start_nodes: set = None,
+    end_nodes: set = None,
+    separated: bool = True,
+) -> set:
+    g_matrix = convert_nfa_to_matrix(
+        convert_graph_to_nfa(graph, start_nodes, end_nodes)
+    )
+    r_matrix = convert_nfa_to_matrix(convert_regex_to_minimal_dfa(regex))
+    return bfs(g_matrix, r_matrix, separated)
