@@ -7,6 +7,9 @@ from pyformlang.finite_automaton import (
 )
 from pyformlang.regular_expression import Regex
 from scipy.sparse import dok_matrix
+from pyformlang.cfg import CFG
+from project.grammars.extended_contex_free_grammar import ECFG, ECFGProduction
+from project.grammars.recursive_state_machine import RecursiveStateMachine, subAutomaton
 
 
 class NfaAsMatrix:
@@ -97,3 +100,59 @@ def convert_matrix_to_nfa(matrix: NfaAsMatrix) -> NondeterministicFiniteAutomato
         nfa.add_final_state(states_arr[i])
 
     return nfa
+
+
+def convert_cfg_to_wcnf(cfg: CFG) -> CFG:
+    wcnf = (
+        cfg.remove_useless_symbols()
+        .eliminate_unit_productions()
+        .remove_useless_symbols()
+    )
+
+    return CFG(
+        start_symbol=cfg.start_symbol,
+        productions=wcnf._decompose_productions(
+            wcnf._get_productions_with_only_single_terminals()
+        ),
+    )
+
+
+def convert_cfg_to_ecfg(cfg: CFG) -> ECFG:
+    productions = dict()
+
+    for cfg_production in cfg.productions:
+        body = Regex("$")
+        if cfg_production.body:
+            body = Regex(" ".join([str(i.value) for i in cfg_production.body]))
+        head = cfg_production.head
+        if head in productions:
+            productions.get(head).union(body)
+        else:
+            productions[head] = body
+    ecfg_productions = {ECFGProduction(h, b) for h, b in productions.items()}
+    return ECFG(cfg.variables, cfg.start_symbol, ecfg_productions)
+
+
+def convert_cfg_to_rsm(ecfg: CFG) -> RecursiveStateMachine:
+    return RecursiveStateMachine(
+        ecfg.start_symbol,
+        [
+            subAutomaton(
+                i.head,
+                convert_regex_to_minimal_dfa(
+                    Regex(" ".join([j.value for j in i.body]))
+                ),
+            )
+            for i in ecfg.productions
+        ],
+    )
+
+
+def convert_ecfg_to_rsm(ecfg: ECFG) -> RecursiveStateMachine:
+    return RecursiveStateMachine(
+        ecfg.start_symbol,
+        [
+            subAutomaton(i.head, convert_regex_to_minimal_dfa(i.body))
+            for i in ecfg.productions
+        ],
+    )
