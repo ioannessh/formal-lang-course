@@ -133,6 +133,21 @@ def convert_cfg_to_ecfg(cfg: CFG) -> ECFG:
     return ECFG(cfg.variables, cfg.start_symbol, ecfg_productions)
 
 
+def convert_cfg_to_rsm(ecfg: CFG) -> RecursiveStateMachine:
+    return RecursiveStateMachine(
+        ecfg.start_symbol,
+        [
+            subAutomaton(
+                i.head,
+                convert_regex_to_minimal_dfa(
+                    Regex(" ".join([j.value for j in i.body]))
+                ),
+            )
+            for i in ecfg.productions
+        ],
+    )
+
+
 def convert_ecfg_to_rsm(ecfg: ECFG) -> RecursiveStateMachine:
     return RecursiveStateMachine(
         ecfg.start_symbol,
